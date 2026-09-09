@@ -1706,6 +1706,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 		{
 			TRACE("CACHE IMAGE", desc);
 			desc.hash = hasher.get();
+			renderer.set_texture_replacement_source(registers.ctx[registers.prim.desc.CTXT].tex0.bits, registers.texclut.bits);   // [texreplace]
 			image = renderer.create_cached_texture(desc);
 
 			// Long-term references can persist across render passes, and intended for normal resource textures.
@@ -1789,6 +1790,15 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 
 		info.info.bias.x = -float(desc.rect.x) * info.info.sizes.z;
 		info.info.bias.y = -float(desc.rect.y) * info.info.sizes.w;
+		if (renderer.is_replaced_image(&*image))
+		{   // [texreplace] host image = the whole PS2 texture at any resolution: normalise by the PS2 size, no crop offset,
+			// clamp region in PS2 texels
+			info.info.sizes.z = 1.0f / float(width);
+			info.info.sizes.w = 1.0f / float(height);
+			if (uint32_t(desc.clamp.desc.WMS) == CLAMPBits::CLAMP) info.info.region.z = float(width) - 1.0f;
+			if (uint32_t(desc.clamp.desc.WMT) == CLAMPBits::CLAMP) info.info.region.w = float(height) - 1.0f;
+			info.info.bias = vec2(0.0f);
+		}
 
 		info.info.arrayed = int(desc.samples > 1);
 		info.info.flags = long_term_cache_texture ? TEX_INFO_LONG_TERM_REFERENCE : 0;

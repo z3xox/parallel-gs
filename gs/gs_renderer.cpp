@@ -1368,8 +1368,9 @@ Vulkan::ImageHandle GSRenderer::create_cached_texture(const TextureDescriptor &d
 	Vulkan::ImageHandle img;
 	if (replacement_iface && desc.samples == 1)
 	{
-		img = replacement_iface->replace(desc, *device);
+		img = replacement_iface->replace(desc, replacement_tex0, replacement_texclut, *device);
 		replaced = bool(img);
+		if (replaced) replaced_images.insert(&*img);
 	}
 	if (!img)
 		img = pull_image_handle_from_slab(desc.rect.width, desc.rect.height, desc.rect.levels, desc.samples);
@@ -4145,7 +4146,7 @@ void GSRenderer::transfer_overlap_barrier()
 
 void GSRenderer::sample_crtc_circuit(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img, const DISPFBBits &dispfb,
                                      const SamplingRect &rect, uint32_t super_samples,
-                                     const Vulkan::Image *promoted)
+                                     const Vulkan::Image *promoted, uint32_t hires_shift)
 {
 	cmd.image_barrier(img, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_ATTACHMENT_OPTIMAL,
 	                  0, 0, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT, VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT);
@@ -4168,15 +4169,16 @@ void GSRenderer::sample_crtc_circuit(Vulkan::CommandBuffer &cmd, const Vulkan::I
 	auto valid_extent = rect.valid_extent;
 	if (super_samples > 1)
 	{
-		valid_extent.width *= 2;
-		valid_extent.height *= 2;
+		valid_extent.width <<= hires_shift;   // [hires4x]
+		valid_extent.height <<= hires_shift;
 	}
 	cmd.set_scissor({{ 0, 0 }, valid_extent });
 
-	cmd.set_specialization_constant_mask(0x7);
+	cmd.set_specialization_constant_mask(0xf);
 	cmd.set_specialization_constant(0, uint32_t(dispfb.PSM));
 	cmd.set_specialization_constant(1, vram_size - 1);
 	cmd.set_specialization_constant(2, super_samples);
+	cmd.set_specialization_constant(3, hires_shift);   // [hires4x]
 
 	struct Registers
 	{
@@ -4307,6 +4309,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	// Tries to counteract field blending. It's just a blur that is overkill.
 	const bool anti_blur = info.anti_blur;
 	bool high_resolution_scanout = info.high_resolution_scanout;
+	uint32_t hires_shift = 0;   // [hires4x] decided once super_samples and the video mode are settled
 	bool is_interlaced = scanout_is_interlaced(priv, info);
 	bool force_deinterlace = !high_resolution_scanout &&
 	                         (priv.smode2.FFMD && priv.smode2.INT && priv.smode1.CMOD != SMODE1Bits::CMOD_PROGRESSIVE);
@@ -4481,6 +4484,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 		flush_submit(0);
 		return {};
 	}
+
+	hires_shift = high_resolution_scanout ? ((super_samples >= 16 && info.high_resolution_scanout_shift >= 2) ? 2u : 1u) : 0u;   // [hires4x]
 
 	// It's possible the input had higher resolution.
 	// Make a fake mode in this case that has more lines to compensate.
@@ -4660,13 +4665,10 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 		if (image_info.width && image_info.height)
 		{
-			if (high_resolution_scanout)
-			{
-				image_info.width *= 2;
-				image_info.height *= 2;
-			}
+			image_info.width <<= hires_shift;   // [hires4x]
+			image_info.height <<= hires_shift;
 			circuit1 = device->create_image(image_info);
-			sample_crtc_circuit(cmd, *circuit1, priv.dispfb1, rect, super_samples, promoted1);
+			sample_crtc_circuit(cmd, *circuit1, priv.dispfb1, rect, super_samples, promoted1, hires_shift);
 			device->set_name(*circuit1, "Circuit1");
 		}
 
@@ -4718,13 +4720,10 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 		if (image_info.width && image_info.height)
 		{
-			if (high_resolution_scanout)
-			{
-				image_info.width *= 2;
-				image_info.height *= 2;
-			}
+			image_info.width <<= hires_shift;   // [hires4x]
+			image_info.height <<= hires_shift;
 			circuit2 = device->create_image(image_info);
-			sample_crtc_circuit(cmd, *circuit2, priv.dispfb2, rect, super_samples, promoted2);
+			sample_crtc_circuit(cmd, *circuit2, priv.dispfb2, rect, super_samples, promoted2, hires_shift);
 			device->set_name(*circuit2, "Circuit2");
 		}
 
@@ -4780,11 +4779,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 		uint32_t horiz_resolution1 = circuit2 ? circuit2->get_width() : 0;
 
 		// Need to do all the CRTC offset math in single sampled domain to avoid lots of confusing cases later.
-		if (high_resolution_scanout)
-		{
-			horiz_resolution0 >>= 1;
-			horiz_resolution1 >>= 1;
-		}
+		horiz_resolution0 >>= hires_shift;   // [hires4x]
+		horiz_resolution1 >>= hires_shift;
 
 		uint32_t magh1 = priv.display1.MAGH + 1;
 		uint32_t magh2 = priv.display2.MAGH + 1;
@@ -4818,6 +4814,7 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 	result.mode_width = mode_width;
 	result.mode_height = mode_height;
 	result.high_resolution_scanout = high_resolution_scanout;
+	result.high_resolution_shift = hires_shift;
 	result.sampling_rate_mhz = sampling_rate_mhz;
 
 	if (info.raw_circuit_scanout &&
@@ -4828,11 +4825,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 		auto effective_mode_width = mode_width;
 		auto effective_mode_height = mode_height;
 
-		if (high_resolution_scanout)
-		{
-			effective_mode_width *= 2;
-			effective_mode_height *= 2;
-		}
+		effective_mode_width <<= hires_shift;   // [hires4x]
+		effective_mode_height <<= hires_shift;
 
 		bool is_raw_circuit1 =
 				circuit1 && !circuit2 && MMOD == PMODEBits::MMOD_ALPHA_ALP && ALP == 0xff &&
@@ -4854,8 +4848,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			                  VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
 			                  info.dst_stage, info.dst_access);
 
-			result.internal_width = result.image->get_width() >> int(high_resolution_scanout);
-			result.internal_height = result.image->get_height() >> int(high_resolution_scanout);
+			result.internal_width = result.image->get_width() >> hires_shift;
+			result.internal_height = result.image->get_height() >> hires_shift;
 			result.double_strike = double_strike;
 
 			flush_submit(0);
@@ -4865,8 +4859,8 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 
 	result.internal_width = mode_width;
 	result.internal_height = mode_height;
-	image_info.width = mode_width << int(high_resolution_scanout);
-	image_info.height = mode_height << int(high_resolution_scanout);
+	image_info.width = mode_width << hires_shift;
+	image_info.height = mode_height << hires_shift;
 
 	if (field_aware_rendering)
 	{
@@ -4935,12 +4929,13 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			vp.minDepth = 0.0f;
 			vp.maxDepth = 1.0f;
 
-			if (high_resolution_scanout)
+			if (hires_shift)
 			{
-				vp.x *= 2.0f;
-				vp.y *= 2.0f;
-				vp.width *= 2.0f;
-				vp.height *= 2.0f;
+				const float hs = float(1u << hires_shift);   // [hires4x]
+				vp.x *= hs;
+				vp.y *= hs;
+				vp.width *= hs;
+				vp.height *= hs;
 
 				if (field_aware_rendering && !info.phase)
 					vp.y -= 1.0f;
@@ -4968,12 +4963,13 @@ ScanoutResult GSRenderer::vsync(const PrivRegisterState &priv, const VSyncInfo &
 			vp.minDepth = 0.0f;
 			vp.maxDepth = 1.0f;
 
-			if (high_resolution_scanout)
+			if (hires_shift)
 			{
-				vp.x *= 2.0f;
-				vp.y *= 2.0f;
-				vp.width *= 2.0f;
-				vp.height *= 2.0f;
+				const float hs = float(1u << hires_shift);   // [hires4x]
+				vp.x *= hs;
+				vp.y *= hs;
+				vp.width *= hs;
+				vp.height *= hs;
 
 				if (field_aware_rendering && !info.phase)
 					vp.y -= 1.0f;

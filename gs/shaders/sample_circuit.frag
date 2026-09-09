@@ -40,6 +40,7 @@ layout(push_constant) uniform Registers
 layout(constant_id = 0) const int PSM = 0;
 layout(constant_id = 1) const uint VRAM_MASK = 4 * 1024 * 1024 - 1;
 layout(constant_id = 2) const uint SUPER_SAMPLES = 1;
+layout(constant_id = 3) const uint HIRES_SHIFT = 1;   // [hires4x] 1 = 2x output (4 samples averaged per pixel), 2 = 4x (one sample per pixel, 16 samples)
 
 const bool is_tex_16bit = PSM == PSMCT16 || PSM == PSMCT16S || PSM == PSMZ16 || PSM == PSMZ16S;
 
@@ -100,7 +101,7 @@ void main()
     uvec2 super_sampled_coord = uvec2(gl_FragCoord.xy);
     uvec2 single_sampled_coord;
     if (SUPER_SAMPLES >= 4)
-        single_sampled_coord = super_sampled_coord >> 1;
+        single_sampled_coord = super_sampled_coord >> HIRES_SHIFT;
     else
         single_sampled_coord = super_sampled_coord;
 
@@ -123,7 +124,13 @@ void main()
     }
     else if (SUPER_SAMPLES >= 4)
     {
-        if (super_sample_is_valid(addr))
+        if (SUPER_SAMPLES == 16 && HIRES_SHIFT == 2 && super_sample_is_valid(addr))
+        {   // [hires4x] ordered 4x4 grid: layer i has y = bit0 + 2*bit2, x = bit1 + 2*bit3 (see compute_sample_points)
+            uint sx = super_sampled_coord.x & 3u, sy = super_sampled_coord.y & 3u;
+            uint layer = BASE_SSAA_LAYER + ((sy >> 1u) + (sx >> 1u) * 2u) * 4u + (sy & 1u) + (sx & 1u) * 2u;
+            FragColor = sample_vram(addr, layer);
+        }
+        else if (super_sample_is_valid(addr))
         {
             uint quad_offset;
 

@@ -4,6 +4,7 @@
 // SPDX-License-Identifier: LGPL-3.0+
 
 #pragma once
+#include <unordered_set>
 
 #include "gs_registers.hpp"
 #include "muglm/muglm.hpp"
@@ -35,6 +36,7 @@ struct ScanoutResult
 
 	// Set to true if we scanned out at a higher resolution.
 	bool high_resolution_scanout;
+	uint32_t high_resolution_shift;   // [hires4x] 0, 1 (2x) or 2 (4x)
 
 	// If the result was interlaced.
 	// The result may already be deinterlaced automatically unless it was skipped.
@@ -172,7 +174,7 @@ class TextureReplacementInterface
 {
 public:
 	virtual ~TextureReplacementInterface() = default;
-	virtual Vulkan::ImageHandle replace(const TextureDescriptor &desc, Vulkan::Device &device) = 0;
+	virtual Vulkan::ImageHandle replace(const TextureDescriptor &desc, uint64_t live_tex0, uint64_t live_texclut, Vulkan::Device &device) = 0;   // live_*: raw TEX0/TEXCLUT at the miss (the descriptor zeroes CBP/CPSM/CSA)
 };
 
 struct TextureInfo
@@ -254,7 +256,11 @@ class PageTracker;
 class GSRenderer
 {
 public:
-	void set_texture_replacement_interface(TextureReplacementInterface *iface) { replacement_iface = iface; }   // [texreplace]
+	void set_texture_replacement_interface(TextureReplacementInterface *iface) { replacement_iface = iface; }
+	void set_texture_replacement_source(uint64_t tex0, uint64_t texclut) { replacement_tex0 = tex0; replacement_texclut = texclut; }
+	// A host image covers the WHOLE PS2 texture at its own resolution (never the cached crop): the sampling setup must
+	// normalise by the PS2 size with no rect offset. Pointers stay valid: the host keeps its images alive.
+	bool is_replaced_image(const Vulkan::Image *img) const { return replaced_images.count(img) != 0; }   // [texreplace]
 	explicit GSRenderer(PageTracker &tracker);
 	bool init(Vulkan::Device *device, const GSOptions &options);
 	~GSRenderer();
@@ -461,6 +467,8 @@ private:
 
 	void upload_texture(const TextureUpload &upload);
 	TextureReplacementInterface *replacement_iface = nullptr;
+	uint64_t replacement_tex0 = 0, replacement_texclut = 0;
+	std::unordered_set<const Vulkan::Image *> replaced_images;
 	void bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp);
 
 	bool bound_texture_has_array = false;
@@ -511,7 +519,7 @@ private:
 
 	void sample_crtc_circuit(Vulkan::CommandBuffer &cmd, const Vulkan::Image &img,
 	                         const DISPFBBits &dispfb, const SamplingRect &rect, uint32_t super_samples,
-	                         const Vulkan::Image *promoted);
+	                         const Vulkan::Image *promoted, uint32_t hires_shift);
 
 	static SamplingRect compute_circuit_rect(const PrivRegisterState &priv, uint32_t phase,
 	                                         const DISPLAYBits &display, bool force_progressive,
