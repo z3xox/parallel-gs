@@ -1364,7 +1364,15 @@ Vulkan::ImageHandle GSRenderer::create_cached_texture(const TextureDescriptor &d
 
 	assert(desc.rect.width && desc.rect.height);
 
-	Vulkan::ImageHandle img = pull_image_handle_from_slab(desc.rect.width, desc.rect.height, desc.rect.levels, desc.samples);
+	bool replaced = false;   // [texreplace] BT3-Recomp: host-provided image instead of a VRAM decode
+	Vulkan::ImageHandle img;
+	if (replacement_iface && desc.samples == 1)
+	{
+		img = replacement_iface->replace(desc, *device);
+		replaced = bool(img);
+	}
+	if (!img)
+		img = pull_image_handle_from_slab(desc.rect.width, desc.rect.height, desc.rect.levels, desc.samples);
 
 	if (!img)
 	{
@@ -1413,7 +1421,8 @@ Vulkan::ImageHandle GSRenderer::create_cached_texture(const TextureDescriptor &d
 	barrier.newLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barrier.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, VK_REMAINING_MIP_LEVELS, 0, VK_REMAINING_ARRAY_LAYERS };
 
-	pre_image_barriers.push_back(barrier);
+	if (!replaced)   // [texreplace] the host image already holds its pixels in GENERAL; an UNDEFINED transition would discard them
+		pre_image_barriers.push_back(barrier);
 
 	barrier.oldLayout = VK_IMAGE_LAYOUT_GENERAL;
 	barrier.newLayout = VK_IMAGE_LAYOUT_READ_ONLY_OPTIMAL;
@@ -1423,7 +1432,13 @@ Vulkan::ImageHandle GSRenderer::create_cached_texture(const TextureDescriptor &d
 	barrier.dstAccessMask = VK_ACCESS_2_SHADER_SAMPLED_READ_BIT;
 
 	post_image_barriers.push_back(barrier);
-	texture_uploads.push_back({ img, desc });
+	{   // [texreplace] C++14: a default member initializer makes TextureUpload a non-aggregate
+		TextureUpload up;
+		up.image = img;
+		up.desc = desc;
+		up.replaced = replaced;
+		texture_uploads.push_back(std::move(up));
+	}
 
 	if (enable_timestamps)
 	{
@@ -3522,6 +3537,8 @@ void GSRenderer::dispatch_texture_analysis(Vulkan::CommandBuffer &cmd, const Ren
 
 void GSRenderer::upload_texture(const TextureUpload &upload)
 {
+	if (upload.replaced)   // [texreplace] complete host image: only the post barrier (GENERAL -> READ_ONLY) applies
+		return;
 	auto &desc = upload.desc;
 	auto &img = *upload.image;
 	auto &scratch = upload.scratch;

@@ -261,6 +261,7 @@ public:
 
 	// Optional interface if application wants to listen for these IRQ related events.
 	void set_signal_interface(SignalInterface *iface);
+	void set_texture_replacement_interface(TextureReplacementInterface *iface) { renderer.set_texture_replacement_interface(iface); }   // [texreplace]
 
 	// GIF payload format.
 	void gif_transfer(uint32_t path, const void *data, size_t size);

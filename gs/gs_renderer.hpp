@@ -165,6 +165,16 @@ static constexpr uint32_t MaxRenderPassInstances = 8;
 // It would also be far too slow to be practical.
 static constexpr uint32_t MaxSamplingRateLog2 = 2;
 
+// [texreplace] BT3-Recomp: a host-side texture replacement hook. When set, every texture-cache miss asks the host for an
+// image to bind INSTEAD of decoding VRAM (any size -- the ubershader samples with normalized UVs); null = decode as usual.
+#define PARALLEL_GS_TEXREPLACE 1   // BT3-Recomp fork feature flag: the texture replacement hook below exists
+class TextureReplacementInterface
+{
+public:
+	virtual ~TextureReplacementInterface() = default;
+	virtual Vulkan::ImageHandle replace(const TextureDescriptor &desc, Vulkan::Device &device) = 0;
+};
+
 struct TextureInfo
 {
 	const Vulkan::ImageView *view;
@@ -244,6 +254,7 @@ class PageTracker;
 class GSRenderer
 {
 public:
+	void set_texture_replacement_interface(TextureReplacementInterface *iface) { replacement_iface = iface; }   // [texreplace]
 	explicit GSRenderer(PageTracker &tracker);
 	bool init(Vulkan::Device *device, const GSOptions &options);
 	~GSRenderer();
@@ -368,6 +379,7 @@ private:
 		Vulkan::ImageHandle image;
 		TextureDescriptor desc;
 		Scratch scratch;
+		bool replaced = false;   // [texreplace] host-provided image: no VRAM decode dispatch
 		struct
 		{
 			Vulkan::BufferHandle buffer;
@@ -448,6 +460,7 @@ private:
 	void init_vram(const GSOptions &options);
 
 	void upload_texture(const TextureUpload &upload);
+	TextureReplacementInterface *replacement_iface = nullptr;
 	void bind_textures(Vulkan::CommandBuffer &cmd, const RenderPass &rp);
 
 	bool bound_texture_has_array = false;
