@@ -1836,7 +1836,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 	{
 		uint32_t tex_index = drawing_kick_update_texture(feedback_mode, uv_bb, bb);
 		p.tex = tex_index << TEX_TEXTURE_INDEX_OFFSET;
-		p.tex |= ctx.tex1.desc.MMAG == TEX1Bits::LINEAR ? TEX_SAMPLER_MAG_LINEAR_BIT : 0;
+		p.tex |= (hacks.force_bilinear || ctx.tex1.desc.MMAG == TEX1Bits::LINEAR) ? TEX_SAMPLER_MAG_LINEAR_BIT : 0;   // [texreplace]
 		p.tex |= ctx.clamp.desc.has_horizontal_clamp() ? TEX_SAMPLER_CLAMP_S_BIT : 0;
 		p.tex |= ctx.clamp.desc.has_vertical_clamp() ? TEX_SAMPLER_CLAMP_T_BIT : 0;
 
@@ -1875,6 +1875,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 			default:
 				break;
 			}
+			if (hacks.force_bilinear) p.tex |= TEX_SAMPLER_MIN_LINEAR_BIT;   // [texreplace]
 		}
 		else
 		{

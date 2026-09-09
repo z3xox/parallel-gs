@@ -216,6 +216,10 @@ struct Hacks
 	// Can be useful when up-scaling to retain more texture detail.
 	bool disable_mipmaps = false;
 
+	// [texreplace] BT3-Recomp: sample every texture bilinearly regardless of TEX1 MMAG/MMIN (smooths 1x art at high
+	// scanout resolutions, the same knob as the host GL renderer's force_bilinear).
+	bool force_bilinear = false;
+
 	// Disables FIFO readbacks if sync is required and replace them with all zero bytes.
 	// Will mostly likely cause wrong/glitched results,
 	// but may work around otherwise unusable performance on low-power devices or
