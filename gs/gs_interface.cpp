@@ -1838,7 +1838,11 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 	{
 		uint32_t tex_index = drawing_kick_update_texture(feedback_mode, uv_bb, bb);
 		p.tex = tex_index << TEX_TEXTURE_INDEX_OFFSET;
-		p.tex |= (hacks.force_bilinear || ctx.tex1.desc.MMAG == TEX1Bits::LINEAR) ? TEX_SAMPLER_MAG_LINEAR_BIT : 0;   // [texreplace]
+		// [texreplace] force_bilinear only for paletted art textures: a re-view of a render target or a Z buffer (BT3's
+		// depth-mask sprites sample the Z buffer as PSMZ16) must keep the game's nearest sampling -- interpolating those
+		// texels blends unrelated halves of the words behind them and puts columns into the mask.
+		const bool force_linear = hacks.force_bilinear && is_palette_format(uint32_t(ctx.tex0.desc.PSM));
+		p.tex |= (force_linear || ctx.tex1.desc.MMAG == TEX1Bits::LINEAR) ? TEX_SAMPLER_MAG_LINEAR_BIT : 0;
 		p.tex |= ctx.clamp.desc.has_horizontal_clamp() ? TEX_SAMPLER_CLAMP_S_BIT : 0;
 		p.tex |= ctx.clamp.desc.has_vertical_clamp() ? TEX_SAMPLER_CLAMP_T_BIT : 0;
 
@@ -1853,7 +1857,7 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 			}
 			// [texreplace] a host replacement image: interpolate UVs per sample and super-sample the tile so its
 			// extra detail reaches the output (2D sprites are otherwise evaluated once per PS2 pixel).
-			if ((info.flags & TEX_INFO_REPLACED) != 0)
+			if ((info.flags & TEX_INFO_REPLACED) != 0 && hacks.replaced_per_sample)
 				p.tex |= TEX_REPLACED_BIT;
 		}
 
@@ -2891,7 +2895,7 @@ void GSInterface::drawing_kick_primitive(bool adc)
 
 	if (!adc)
 	{
-		if (!draw_is_degenerate())
+		if (!draw_is_degenerate() && !kick_is_filtered())
 			drawing_kick_append<list_primitive, fan_primitive, quad, num_vertices>();
 		else
 			TRACE("Degenerate Draw", DummyBits{});
@@ -2899,6 +2903,25 @@ void GSInterface::drawing_kick_primitive(bool adc)
 
 	// We seem to do queue maintenance regardless after a vertex kick.
 	drawing_kick_maintain_queue<list_primitive, fan_primitive, quad, num_vertices>();
+}
+
+bool GSInterface::kick_is_filtered() const
+{   // [bt3 bisect] see Hacks::skip_kick_mask
+	if (!hacks.skip_kick_mask)
+		return false;
+	auto &ctx = registers.ctx[registers.prim.desc.CTXT];
+	const uint32_t fpsm = uint32_t(ctx.frame.desc.PSM);
+	if ((hacks.skip_kick_mask & 1u) && (fpsm == PSMCT16 || fpsm == PSMCT16S))
+		return true;
+	if ((hacks.skip_kick_mask & 2u) && registers.prim.desc.TME)
+	{
+		const uint32_t tpsm = uint32_t(ctx.tex0.desc.PSM);
+		if ((tpsm == PSMCT32 || tpsm == PSMCT24) && uint32_t(ctx.tex0.desc.TBP0) == 10752u)
+			return true;
+	}
+	if ((hacks.skip_kick_mask & 4u) && uint32_t(ctx.frame.desc.FBP) == 336u)
+		return true;
+	return false;
 }
 
 void GSInterface::drawing_kick_invalid(bool)

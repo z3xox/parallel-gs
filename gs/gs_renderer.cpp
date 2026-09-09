@@ -1305,6 +1305,11 @@ TexRect GSRenderer::compute_effective_texture_rect(const TextureDescriptor &desc
 
 void GSRenderer::recycle_image_handle(Vulkan::ImageHandle image)
 {
+	// [texreplace] a host replacement image is owned by the host (its cache keeps it alive) and is sampled as the whole
+	// PS2 texture. Pooling it would hand it out as storage for the next texture of the same size: the VRAM decode
+	// overwrites the replacement, and the new texture inherits the "replaced" sampling (whole-texture scale, per-sample).
+	if (replaced_images.count(&*image) != 0)
+		return;
 	// Have to defer this until render pass is flushed, since an invalidate doesn't mean the texture is
 	// immune from reuse.
 	if (Util::is_pow2(image->get_width()) && Util::is_pow2(image->get_height()) &&

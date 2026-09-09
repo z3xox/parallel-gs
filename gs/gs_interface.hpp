@@ -220,6 +220,14 @@ struct Hacks
 	// scanout resolutions, the same knob as the host GL renderer's force_bilinear).
 	bool force_bilinear = false;
 
+	// [texreplace] BT3-Recomp: interpolate attributes per sample for primitives sampling a replacement image (off = the
+	// snapped single-sampled evaluation upstream uses for sprites / flat UI).
+	bool replaced_per_sample = true;
+
+	// [bt3 bisect] drop classes of kicks: 1 = FRAME is a 16-bit view, 2 = textured from a 24/32-bit view of block 10752,
+	// 4 = FRAME.FBP == 336. Diagnostic only.
+	uint32_t skip_kick_mask = 0;
+
 	// Disables FIFO readbacks if sync is required and replace them with all zero bytes.
 	// Will mostly likely cause wrong/glitched results,
 	// but may work around otherwise unusable performance on low-power devices or
@@ -596,6 +604,7 @@ private:
 	void drawing_kick_maintain_queue();
 
 	void drawing_kick_invalid(bool);
+	bool kick_is_filtered() const;   // [bt3 bisect]
 	void post_draw_kick_handler();
 
 	struct

@@ -20,3 +20,7 @@ target_compile_definitions(parallel-gs-stream PRIVATE PRIVATE ASSET_DIRECTORY=\"
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/assets DESTINATION ${CMAKE_INSTALL_BINDIR})
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../Granite/assets DESTINATION ${CMAKE_INSTALL_BINDIR}/builtin)
+
+# [bt3] offline picture dumps
+add_granite_offline_tool(parallel-gs-replayer-ppm gs_dump_replayer_ppm.cpp)
+target_link_libraries(parallel-gs-replayer-ppm PRIVATE parallel-gs parallel-gs-dump)
