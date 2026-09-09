@@ -268,6 +268,8 @@ public:
 	GSInterface();
 	bool init(Vulkan::Device *device, const GSOptions &options);
 	void reset_context_state();
+	// [texreplace] flush the render pass and drop every cached texture (the host's replacement set changed)
+	void invalidate_all_cached_textures();
 
 	void set_super_sampling_rate(SuperSampling super_sampling, bool ordered_grid, bool super_sampled_textures);
 	void set_debug_mode(const DebugMode &mode);

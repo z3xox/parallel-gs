@@ -896,6 +896,17 @@ bool PageTracker::invalidate_cached_textures(
 	return did_work;
 }
 
+void PageTracker::invalidate_all_textures()
+{
+	for (auto &page : page_state)
+	{
+		if (!page.cached_textures.empty())
+			invalidate_cached_textures(page.cached_textures, UINT32_MAX, UINT32_MAX, UINT32_MAX);
+		if (!page.short_term_cached_textures.empty())
+			invalidate_cached_textures(page.short_term_cached_textures, UINT32_MAX, UINT32_MAX, UINT32_MAX);
+	}
+}
+
 void PageTracker::invalidate_texture_cache(uint32_t clut_instance)
 {
 	bool invalidated = false;

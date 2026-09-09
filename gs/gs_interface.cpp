@@ -4306,6 +4306,12 @@ const void *GSInterface::map_vram_read(size_t offset, size_t size)
 	return static_cast<const uint8_t *>(renderer.begin_host_vram_access()) + offset;
 }
 
+void GSInterface::invalidate_all_cached_textures()
+{
+	flush();
+	tracker.invalidate_all_textures();
+}
+
 void GSInterface::flush()
 {
 	flush_pending_transfer(true);
