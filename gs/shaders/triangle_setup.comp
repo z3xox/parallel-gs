@@ -665,7 +665,9 @@ void main_inner(uint index)
 
         // If we only deviate by one sub-texel, interpolation will very likely never hit that upper value.
         // Since we snap down to the minimum value either way.
-        if (half_texel_offset && no_effective_interpolation)
+        // [texreplace] keep LINEAR for replacement images: the 1:1 snap argument is about PS2 texels, and a
+        // replacement has several texels per PS2 texel.
+        if (half_texel_offset && no_effective_interpolation && (primitive_attr.data[index].tex & TEX_REPLACED_BIT) == 0)
             primitive_attr.data[index].tex &= ~TEX_SAMPLER_MAG_LINEAR_BIT;
     }
 
@@ -868,6 +870,28 @@ void main_inner(uint index)
                     heuristic.data.single_sample_fixup_indirect.z = 1u;
                 }
             }
+        }
+    }
+
+    // [texreplace] A primitive sampling a host replacement image: if its attributes were snapped to the single-sampled
+    // pixel (2D sprites, flat UI triangles), interpolate them per sample instead so the replacement's extra detail
+    // reaches every sample. Coverage stays snapped (SNAP_RASTER). Same average-position correction as the
+    // per-sample super-sampled-texture path above, so the mean sampling point does not shift.
+    if (SAMPLING_RATE_Y_LOG2 != 0 && (primitive_attr.data[index].tex & TEX_REPLACED_BIT) != 0)
+    {
+        const uint SNAP_ATTR_BIT = (1u << STATE_BIT_SNAP_ATTRIBUTE);
+        if ((primitive_attr.data[index].state & SNAP_ATTR_BIT) != 0)
+        {
+            primitive_attr.data[index].state &= ~SNAP_ATTR_BIT;
+            vec2 bottom_right_sample =
+                float(1 << PGS_RASTER_SUBSAMPLE_BITS) *
+                get_average_sampling_offset(SAMPLING_RATE_X_LOG2, SAMPLING_RATE_Y_LOG2);
+            ivec2 b = plane_b.xy;
+            ivec2 c = plane_c.xy;
+            float di_dcorner = float(b.x + b.y) * bottom_right_sample.x;
+            float dj_dcorner = float(c.x + c.y) * bottom_right_sample.y;
+            primitive_setup.data[index].error_i = error_i - di_dcorner * inv_area_scaled;
+            primitive_setup.data[index].error_j = error_j - dj_dcorner * inv_area_scaled;
         }
     }
 }

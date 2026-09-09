@@ -106,6 +106,7 @@ struct TexInfo
 
 CONSTEXPR int TEX_INFO_FORCE_SAMPLE_MAPPING = 0x1;
 CONSTEXPR int TEX_INFO_LONG_TERM_REFERENCE = 0x2;
+CONSTEXPR int TEX_INFO_REPLACED = 0x4;   // [texreplace]
 
 CONSTEXPR int PGS_FB_SWIZZLE_WIDTH_LOG2 = 3;
 CONSTEXPR int PGS_FB_SWIZZLE_HEIGHT_LOG2 = 3;
@@ -251,6 +252,7 @@ CONSTEXPR int TEX_MAX_MIP_LEVEL_BITS = 3;
 CONSTEXPR int TEX_PER_SAMPLE_BIT = 1 << 24;
 CONSTEXPR int TEX_SAMPLE_MAPPING_BIT = 1 << 25;
 CONSTEXPR int TEX_SAMPLE_RESOLVED_BIT = 1 << 26;
+CONSTEXPR int TEX_REPLACED_BIT = 1 << 27;   // [texreplace] samples a host replacement image (more detail than the PS2 texture)
 /////
 
 // PrimitiveAttribute::tex2

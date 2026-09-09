@@ -120,7 +120,7 @@ void update_heuristics(
         has_z_write = true;
 
     uint t = primitive_attr.data[primitive_index].tex;
-    if ((t & TEX_PER_SAMPLE_BIT) != 0)
+    if ((t & (TEX_PER_SAMPLE_BIT | TEX_REPLACED_BIT)) != 0)   // [texreplace] replacement images need the samples
         requires_super_sample = true;
 }
 

@@ -887,7 +887,7 @@ ShadeResultEarly shade_early(uint primitive_index)
 			i = bary.x;
 			j = bary.y;
 		}
-		else if (HAS_TEXTURE_ARRAY && snap_state == SNAP_RASTER_BIT)
+		else if (snap_state == SNAP_RASTER_BIT)   // [texreplace] also reached for replaced-image sprites (no texture array)
 		{
 			// For SSAA textured sprites, we may snap coverage, but we want per-sample interpolation.
 			vec2 bary = evaluate_barycentric_ij(prim.b, prim.c, prim.inv_area,

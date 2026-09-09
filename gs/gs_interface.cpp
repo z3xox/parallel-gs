@@ -1802,6 +1802,8 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 
 		info.info.arrayed = int(desc.samples > 1);
 		info.info.flags = long_term_cache_texture ? TEX_INFO_LONG_TERM_REFERENCE : 0;
+		if (renderer.is_replaced_image(&*image))
+			info.info.flags |= TEX_INFO_REPLACED;   // [texreplace]
 		if (info.info.arrayed)
 			render_pass.tex_infos_has_super_samples = true;
 
@@ -1849,6 +1851,10 @@ void GSInterface::drawing_kick_update_state(FBFeedbackMode feedback_mode, const 
 				if ((info.flags & TEX_INFO_FORCE_SAMPLE_MAPPING) != 0)
 					p.tex |= TEX_SAMPLE_MAPPING_BIT;
 			}
+			// [texreplace] a host replacement image: interpolate UVs per sample and super-sample the tile so its
+			// extra detail reaches the output (2D sprites are otherwise evaluated once per PS2 pixel).
+			if ((info.flags & TEX_INFO_REPLACED) != 0)
+				p.tex |= TEX_REPLACED_BIT;
 		}
 
 		if (ctx.tex1.desc.mmin_has_mipmap() && !hacks.disable_mipmaps)
