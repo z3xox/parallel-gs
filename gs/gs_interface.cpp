@@ -1286,6 +1286,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 	desc.tex1 = ctx.tex1;
 	desc.clamp = ctx.clamp;
 	desc.samples = 1;
+	desc.alpha_only_write = ((ctx.frame.desc.FBMSK & 0x00ffffffu) == 0x00ffffffu) ? 1u : 0u;   // [texreplace]
 
 	auto psm = uint32_t(desc.tex0.desc.PSM);
 	auto cpsm = uint32_t(desc.tex0.desc.CPSM);
@@ -1618,6 +1619,7 @@ uint32_t GSInterface::drawing_kick_update_texture(FBFeedbackMode feedback_mode, 
 	// live as long as we can maintain the render pass.
 	hasher.u64(desc.palette_bank);
 	hasher.u32(desc.samples);
+	hasher.u32(desc.alpha_only_write);   // [texreplace] gate builds cache separately from colour uses
 	auto *cached_index = render_pass.texture_map.find(hasher.get());
 
 	// For explicit feedback, we have to be super careful, and we skip these checks.

@@ -1371,7 +1371,7 @@ Vulkan::ImageHandle GSRenderer::create_cached_texture(const TextureDescriptor &d
 
 	bool replaced = false;   // [texreplace] BT3-Recomp: host-provided image instead of a VRAM decode
 	Vulkan::ImageHandle img;
-	if (replacement_iface && desc.samples == 1)
+	if (replacement_iface && desc.samples == 1 && !desc.alpha_only_write)
 	{
 		img = replacement_iface->replace(desc, replacement_tex0, replacement_texclut, *device);
 		replaced = bool(img);

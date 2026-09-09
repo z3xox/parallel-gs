@@ -97,6 +97,9 @@ struct TextureDescriptor
 	uint32_t palette_bank;
 	uint32_t samples;
 	uint32_t latest_palette_bank; // Purely for debug, so we can observe CLUT memoization.
+	// [texreplace] the draw writes alpha only (FRAME.FBMSK masks RGB): a destination-alpha gate build. Part of the
+	// cache key; the replacement hook is not asked for these, so the gate keeps the game's own alpha shape.
+	uint32_t alpha_only_write;
 	Util::Hash hash; // Purely for debug.
 
 	// This information is purely implied from the desc, so don't compare or hash it.
